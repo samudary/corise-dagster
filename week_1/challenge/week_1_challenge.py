@@ -48,6 +48,10 @@ class Aggregation(BaseModel):
     high: float
 
 
+# @usable_as_dagster_type(description="An object for communicating data state")
+# class Result(BaseModel):
+#     empty: boolean
+
 def csv_helper(file_name: str) -> Iterator[Stock]:
     with open(file_name) as csvfile:
         reader = csv.reader(csvfile)
@@ -55,9 +59,15 @@ def csv_helper(file_name: str) -> Iterator[Stock]:
             yield Stock.from_list(row)
 
 
-@op
+@op(out={"with_stock_results": Out(is_required=False), "without_stock_results": Out(is_required=False)})
 def get_s3_data_op():
-    pass
+    s3_key = context.op_config["s3_key"]
+    stocks = [*csv_helper(s3_key)]
+
+    if not stocks:
+        yield Output(None, "without_stock_results")
+    else:
+        yield Output(stocks, "with_stock_results")
 
 
 @op
@@ -86,4 +96,6 @@ def empty_stock_notify_op(context: OpExecutionContext, empty_stocks: Any):
 
 @job
 def machine_learning_dynamic_job():
-    pass
+    stock_results, empty_stocks = get_s3_data_op()
+    empty_stock_notify_op(empty_stocks)
+    # process_data_op(stock_results)
